@@ -109,12 +109,19 @@ length(n.twobars)
 str(twobars_features[[1]])
 View(twobars_features[[1]])
 
-twobars_features_df <- do.call(rbind, twobars_features)
+twobars_features_df <- lapply(1:length(twobars_features), function(i){
+  l <- nrow(twobars_features[[i]])
+  if(is.null(l)) return(NULL)
+  return( c(i,t(twobars_features[[i]][sample(1:l,10,replace=T),-1])) )
+})
+twobars_features_df <- data.frame(do.call(rbind, twobars_features_df))
+colnames(twobars_features_df) <- c("i", paste0("sample",rep(1:10,each=27),"_",colnames(twobars_features[[1]])[-1]))
 dim(twobars_features_df)
 sum(is.na(twobars_features_df))
-dim(na.omit(twobars_features_df))
+twobars_features_df <- na.omit(twobars_features_df)
 
-save(twobars_features, n.twobars, twobars_features_df, file="output/twobars.RData")
+
+save(twobars_features, twobars_features_df, file="output/twobars.RData")
 load("output/twobars.RData")
 
 
@@ -123,7 +130,7 @@ library(topicmodels)
 
 system.time(lda_lyrics <- LDA(x=lyr[1:2000,-1], k=20))
 lda_inf <- posterior(lda_lyrics, lyr[1:2000,-1])
-song_topics <- paste0("topic",apply(lda_inf$topics,1,which.max))
+song_topics <- apply(lda_inf$topics,1,which.max)
 rowSums(lda_inf$topics) # all 1
 # save(lda_lyrics, lda_inf, file="output/lda.RData")
 load("output/lda.RData")
@@ -133,25 +140,50 @@ topics(lda_lyrics, 1)
 
 # get train X, train Y and test X
 
-trainX <- na.omit(twobars_features_df[twobars_features_df$i <= 2000,])
-trainY <- song_topics[trainX$i]
-testX <- na.omit(twobars_features_df[twobars_features_df$i > 2000,])
-testY <- song_topics[testX$i]
+trainX <- twobars_features_df[twobars_features_df$i <= 2000,]
+trainY <- t(sapply(trainX$i, function(i) lda_inf$topics[i,]))
+testX <- twobars_features_df[twobars_features_df$i > 2000,]
+testY <- t(sapply(testX$i, function(i) lda_inf$topics[i,]))
 
-trainX <- trainX[,-1]
-testX <- testX[,-1]
 
 dim(trainX)
 dim(testX)
-length(trainY)
+dim(trainY)
+dim(testY)
 
-# gbm?
-library(gbm)
-rd <- sample(1:nrow(trainX), 20000)
-gb <- gbm.fit(trainX[rd,], trainY[rd], distribution="multinomial")
-gb$n.trees
-gb$valid.error
-summary(gb)
-pred <- apply(predict(gb, testX, n.trees=100),1,which.max)
-mean(pred == testY)
-table(pred)
+
+# nn
+library(nnet)
+
+m <- nnet(x=trainX[,-1], y=trainY[,-1], size=30, rang=1, decay = 5e-4, maxit = 100, MaxNWts = 10000)
+colSums(m$fitted.values)
+pred <- predict(m, testX, type="raw")
+apply(pred, 1, which.max)
+confusionMatrix(apply(pred, 1, which.max), song_topics[testX$i])
+
+
+# predictive rank sum
+occur <- apply(lyr[,-1], 1, function(row) which(row > 0))
+ref <- apply(terms(lda_lyrics,5000), 2, function(Topic){
+  r <- 1:5000
+  names(r) <- Topic
+  return(r[colnames(lyr[,-1])])
+})
+colSums(ref)
+pred_rank_sum <- list()
+for(i in 2001:2350){
+  pred_rank <- rank(colSums(pred[i-2000,] * t(ref)))
+  pred_rank_sum[[i]] <- sum(pred_rank[occur[[i]]]) / mean(1:5000) / length(occur[[i]])
+}
+pred_rank_sum <- unlist(pred_rank_sum)
+mean(pred_rank_sum) * mean(1:5000) #
+
+# baseline
+pred_rank_sum <- list()
+pred_rank <- rank(-colSums(lyr[,-1]))
+for(i in 2001:2350){
+  pred_rank_sum[[i]] <- sum(pred_rank[occur[[i]]]) / mean(1:5000) / length(occur[[i]])
+}
+pred_rank_sum <- unlist(pred_rank_sum)
+mean(pred_rank_sum) * mean(1:5000) # 600
+

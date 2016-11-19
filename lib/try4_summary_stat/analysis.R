@@ -33,7 +33,7 @@ v.time_signature <- round(v.bars_len_median / v.beats_len_median,0)
 sum(is.na(v.time_signature))
 ## tempo
 v.segments_last <- sapply(1:n, function(i) features[[i]]$segments_start[length(features[[i]]$segments_start)])
-v.tempo <- v.beats_num / v.segments_last * 60
+v.tempo <- v.beats_num / v.segments_last
 ## loudness
 v.segments_loudness_max <- sapply(1:n, function(i) features[[i]]$segments_loudness_max)
 v.segments_loudness_max_peak <- sapply(v.segments_loudness_max, max)
@@ -63,7 +63,7 @@ v.segments_pitches_1st_repeat3 <- sapply(v.segments_pitches_1st, function(pitche
 })
 
 ## rhythm
-v.segments_rhythm <- sapply(1:n, function(i) v.segments_len[[i]] * v.tempo[i] / 60)
+v.segments_rhythm <- sapply(1:n, function(i) v.segments_len[[i]] * v.tempo[i])
 v.segments_rhythm_mean <- sapply(v.segments_rhythm, mean)
 v.segments_rhythm_sd <- sapply(v.segments_rhythm, sd)
 v.segments_rhythm_pct_long <- sapply(v.segments_rhythm, function(beats) mean(beats > 0.95)) # percentage of segments that is longer than 1 beats
@@ -128,7 +128,7 @@ freq.words <- colSums(lyr[,-1]) > 100
 # nn
 library(nnet)
 
-m <- nnet(x=trainX, y=trainY, size=20, rang=0.01, decay = 5e-4, maxit = 400, MaxNWts = 10000)
+m <- nnet(x=trainX, y=trainY, size=30, rang=0.1, decay = 5e-4, maxit = 400, MaxNWts = 10000)
 colSums(m$fitted.values)
 pred <- predict(m, testX, type="raw")
 mean(apply(pred, 1, which.max) == song_topics[2001:2350])
